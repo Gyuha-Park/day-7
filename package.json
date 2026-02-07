@@ -1,0 +1,9 @@
+{
+    "name": "day-6-emotion-diary",
+    "version": "1.0.0",
+    "description": "AI Emotion Diary",
+    "main": "api/analyze.js",
+    "dependencies": {
+        "ioredis": "^5.3.2"
+    }
+}

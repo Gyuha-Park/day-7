@@ -1,12 +1,104 @@
-document.addEventListener('DOMContentLoaded', () => {
+
+// Supabase Client Initialization
+const SUPABASE_URL = "https://srapnlzsodyfiesunptl.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNyYXBubHpzb2R5Zmllc3VucHRsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzA1Mzk1NTYsImV4cCI6MjA4NjExNTU1Nn0.5bvgv-AkZGYhRH19SWELZljLNM0DbOmW4Cr7VjUZObI";
+
+const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+document.addEventListener('DOMContentLoaded', async () => {
+    // Section Elements
+    const loginSection = document.getElementById('login-section');
+    const appSection = document.getElementById('app-section');
+
+    // Auth Form Elements
+    const emailInput = document.getElementById('email');
+    const passwordInput = document.getElementById('password');
+    const loginBtn = document.getElementById('login-btn');
+    const signupBtn = document.getElementById('signup-btn');
+    const googleBtn = document.getElementById('google-login-btn');
+    const logoutBtn = document.getElementById('logout-btn');
+    const userEmailSpan = document.getElementById('user-email');
+
+    // App Elements
     const analyzeBtn = document.getElementById('analyze-btn');
     const diaryInput = document.getElementById('diary-input');
-    const responseBox = document.getElementById('ai-response-box');
     const responseText = document.getElementById('response-text');
     const voiceBtn = document.getElementById('voice-btn');
+    const historyList = document.getElementById('history-list');
 
-    // 1. 로컬 스토리지에서 이전 기록 불러오기
+    // --- Helper Functions ---
+    // (Must be defined before they are used in updateAuthUI)
+
+    const formatDate = (isoString) => {
+        const date = new Date(isoString);
+        return new Intl.DateTimeFormat('ko-KR', {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric',
+            weekday: 'short',
+            hour: '2-digit',
+            minute: '2-digit'
+        }).format(date);
+    };
+
+    const createHistoryCard = (item) => {
+        const card = document.createElement('div');
+        card.className = 'history-card';
+
+        card.innerHTML = `
+            <div class="card-header">
+                <span class="date">${formatDate(item.createdAt)}</span>
+            </div>
+            <div class="card-body">
+                <div class="diary-content">
+                    <p>${item.content}</p>
+                </div>
+                <div class="ai-content">
+                    <span class="ai-label">AI의 답변</span>
+                    <p>${item.aiMessage.replace(/\n/g, '<br>')}</p>
+                </div>
+            </div>
+        `;
+        return card;
+    };
+
+    const fetchHistory = async () => {
+        try {
+            const { data: { session } } = await supabaseClient.auth.getSession();
+
+            if (!session) return; // 세션이 없으면 히스패치 안함
+
+            const response = await fetch('/api/history', {
+                headers: {
+                    'Authorization': `Bearer ${session.access_token}`
+                }
+            });
+
+            if (response.status === 401) {
+                // 토큰 만료 등의 이슈로 401이면 로그인 화면으로 보낼 수도 있음
+                console.error('Unauthorized access to history');
+                return;
+            }
+
+            const data = await response.json();
+
+            if (data.history && data.history.length > 0) {
+                historyList.innerHTML = ''; // Clear loading message
+                data.history.forEach(item => {
+                    const card = createHistoryCard(item);
+                    historyList.appendChild(card);
+                });
+            } else {
+                historyList.innerHTML = '<p class="empty-message">아직 기록된 일기가 없습니다. 첫 일기를 작성해보세요!</p>';
+            }
+        } catch (error) {
+            console.error('History fetch error:', error);
+            historyList.innerHTML = '<p class="error-message">히스토리를 불러오지 못했습니다.</p>';
+        }
+    };
+
     const loadSavedData = () => {
+        // TODO: In the future, this should load from Supabase per user
         const savedDiary = localStorage.getItem('last_diary');
         const savedResponse = localStorage.getItem('last_ai_response');
 
@@ -21,13 +113,135 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    loadSavedData();
+    // --- Authentication Logic ---
+
+    const updateAuthUI = (session) => {
+        if (session) {
+            // Logged in
+            loginSection.classList.add('hidden');
+            appSection.classList.remove('hidden');
+
+            // Set user email
+            if (userEmailSpan && session.user && session.user.email) {
+                userEmailSpan.textContent = session.user.email;
+            }
+
+            // Load user data when logged in
+            loadSavedData();
+            fetchHistory();
+        } else {
+            // Logged out
+            loginSection.classList.remove('hidden');
+            appSection.classList.add('hidden');
+
+            // Clear user info
+            if (userEmailSpan) userEmailSpan.textContent = '';
+
+            // Clear sensitive data from UI
+            diaryInput.value = '';
+            responseText.textContent = '여기에 AI의 답변이 표시됩니다.';
+            historyList.innerHTML = '<div class="loading-spinner">히스토리를 불러오는 중...</div>';
+        }
+    };
+
+    // Listen for auth changes
+    supabaseClient.auth.onAuthStateChange((_event, session) => {
+        updateAuthUI(session);
+    });
+
+    // Check initial session
+    const { data: { session } } = await supabaseClient.auth.getSession();
+    updateAuthUI(session);
+
+    // Login Handler
+    loginBtn.addEventListener('click', async (e) => {
+        e.preventDefault();
+        const email = emailInput.value;
+        const password = passwordInput.value;
+
+        if (!email || !password) {
+            alert('이메일과 비밀번호를 입력해주세요.');
+            return;
+        }
+
+        const { error } = await supabaseClient.auth.signInWithPassword({
+            email,
+            password
+        });
+
+        if (error) {
+            alert('로그인 실패: ' + error.message);
+        }
+    });
+
+    // Signup Handler
+    signupBtn.addEventListener('click', async () => {
+        const email = emailInput.value;
+        const password = passwordInput.value;
+
+        if (!email || !password) {
+            alert('가입하실 이메일과 비밀번호를 입력해주세요.');
+            return;
+        }
+
+        const { error } = await supabaseClient.auth.signUp({
+            email,
+            password
+        });
+
+        if (error) {
+            alert('회원가입 실패: ' + error.message);
+        } else {
+            alert('가입 확인 이메일을 확인해주세요!');
+        }
+    });
+
+    // Google Login Handler
+    googleBtn.addEventListener('click', async () => {
+        const { error } = await supabaseClient.auth.signInWithOAuth({
+            provider: 'google',
+            options: {
+                redirectTo: window.location.origin
+            }
+        });
+
+        if (error) {
+            alert('Google 로그인 실패: ' + error.message);
+        }
+    });
+
+    // Logout Handler
+    logoutBtn.addEventListener('click', async (e) => {
+        e.preventDefault();
+
+        try {
+            const { error } = await supabaseClient.auth.signOut();
+            if (error) throw error;
+
+            // 명시적으로 UI 업데이트 (이벤트가 늦게 발생할 경우 대비)
+            updateAuthUI(null);
+        } catch (error) {
+            console.error('Logout error:', error);
+            alert('로그아웃 중 오류가 발생했습니다: ' + error.message);
+        }
+    });
+
+
+    // --- Original App Logic ---
 
     analyzeBtn.addEventListener('click', async () => {
         const text = diaryInput.value.trim();
 
         if (!text) {
             alert('먼저 일기를 작성해주세요!');
+            return;
+        }
+
+        // Get session for token
+        const { data: { session } } = await supabaseClient.auth.getSession();
+
+        if (!session) {
+            alert('로그인이 필요합니다.');
             return;
         }
 
@@ -42,7 +256,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const response = await fetch('/api/analyze', {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json'
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${session.access_token}`
                 },
                 body: JSON.stringify({ content: text })
             });
@@ -63,6 +278,9 @@ document.addEventListener('DOMContentLoaded', () => {
             // 2. 새로운 기록 로컬 스토리지에 저장
             localStorage.setItem('last_diary', text);
             localStorage.setItem('last_ai_response', aiMessage);
+
+            // 히스토리 새로고침
+            fetchHistory();
 
         } catch (error) {
             console.error('API Error:', error);
@@ -132,62 +350,4 @@ document.addEventListener('DOMContentLoaded', () => {
     diaryInput.addEventListener('blur', () => {
         diaryInput.style.backgroundColor = 'rgba(0, 0, 0, 0.2)';
     });
-    // History Loading
-    const historyList = document.getElementById('history-list');
-
-    const formatDate = (isoString) => {
-        const date = new Date(isoString);
-        return new Intl.DateTimeFormat('ko-KR', {
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric',
-            weekday: 'short',
-            hour: '2-digit',
-            minute: '2-digit'
-        }).format(date);
-    };
-
-    const createHistoryCard = (item) => {
-        const card = document.createElement('div');
-        card.className = 'history-card';
-
-        card.innerHTML = `
-            <div class="card-header">
-                <span class="date">${formatDate(item.createdAt)}</span>
-            </div>
-            <div class="card-body">
-                <div class="diary-content">
-                    <p>${item.content}</p>
-                </div>
-                <div class="ai-content">
-                    <span class="ai-label">AI의 답변</span>
-                    <p>${item.aiMessage.replace(/\n/g, '<br>')}</p>
-                </div>
-            </div>
-        `;
-        return card;
-    };
-
-    const fetchHistory = async () => {
-        try {
-            const response = await fetch('/api/history');
-            const data = await response.json();
-
-            if (data.history && data.history.length > 0) {
-                historyList.innerHTML = ''; // Clear loading message
-                data.history.forEach(item => {
-                    const card = createHistoryCard(item);
-                    historyList.appendChild(card);
-                });
-            } else {
-                historyList.innerHTML = '<p class="empty-message">아직 기록된 일기가 없습니다. 첫 일기를 작성해보세요!</p>';
-            }
-        } catch (error) {
-            console.error('History fetch error:', error);
-            historyList.innerHTML = '<p class="error-message">히스토리를 불러오지 못했습니다.</p>';
-        }
-    };
-
-    // Load history on start
-    fetchHistory();
 });

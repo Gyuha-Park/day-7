@@ -11,45 +11,81 @@
     <link
         href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&family=Noto+Sans+KR:wght@300;400;700&display=swap"
         rel="stylesheet">
+    <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
     <link rel="stylesheet" href="style.css">
 </head>
 
 <body>
     <div class="container">
-        <header>
-            <h1 id="main-title">오늘의 하루는 어땠나요?</h1>
-            <p class="subtitle">작은 감정 하나하나, AI가 당신의 마음을 들어드릴게요.</p>
-        </header>
-
-        <main>
-            <section class="input-section">
-                <textarea id="diary-input" placeholder="여기에 오늘의 이야기를 들려주세요..."></textarea>
-
-                <div class="button-group">
-                    <button id="voice-btn" class="secondary-btn">
-                        <span class="icon">🎙️</span> 음성으로 입력하기
-                    </button>
-                    <button id="analyze-btn" class="primary-btn">
-                        <span class="icon">✨</span> 분석 요청하기
-                    </button>
+        <!-- 로그인 섹션 -->
+        <section id="login-section">
+            <header>
+                <h1>AI 감정 일기</h1>
+                <p class="subtitle">로그인하여 당신의 하루를 기록하세요.</p>
+            </header>
+            <form id="auth-form">
+                <div class="input-group">
+                    <input type="email" id="email" placeholder="이메일" required>
                 </div>
-            </section>
-
-            <section class="result-section">
-                <h2 id="result-title">AI의 답변</h2>
-                <div id="ai-response-box" class="response-box">
-                    <p id="response-text">여기에 AI의 답변이 표시됩니다.</p>
+                <div class="input-group">
+                    <input type="password" id="password" placeholder="비밀번호" required>
                 </div>
-            </section>
-
-            <section class="history-section">
-                <h2 class="section-title">나의 일기 히스토리</h2>
-                <div id="history-list" class="history-container">
-                    <!-- 자바스크립트로 로드된 히스토리 카드가 여기에 추가됩니다 -->
-                    <div class="loading-spinner">히스토리를 불러오는 중...</div>
+                <div class="auth-buttons">
+                    <button type="submit" id="login-btn" class="primary-btn">로그인</button>
+                    <button type="button" id="signup-btn" class="secondary-btn">회원가입</button>
                 </div>
-            </section>
-        </main>
+                <div class="divider">
+                    <span>또는</span>
+                </div>
+                <button type="button" id="google-login-btn" class="google-btn">
+                    <span class="icon">G</span> Google로 로그인
+                </button>
+            </form>
+        </section>
+
+        <!-- 메인 앱 섹션 (로그인 후 표시) -->
+        <section id="app-section" class="hidden">
+            <header>
+                <div class="header-top">
+                    <h1 id="main-title">오늘의 하루는 어땠나요?</h1>
+                    <div class="user-controls">
+                        <span id="user-email" class="user-email"></span>
+                        <button id="logout-btn" class="text-btn">로그아웃</button>
+                    </div>
+                </div>
+                <p class="subtitle">작은 감정 하나하나, AI가 당신의 마음을 들어드릴게요.</p>
+            </header>
+
+            <main>
+                <section class="input-section">
+                    <textarea id="diary-input" placeholder="여기에 오늘의 이야기를 들려주세요..."></textarea>
+
+                    <div class="button-group">
+                        <button id="voice-btn" class="secondary-btn">
+                            <span class="icon">🎙️</span> 음성으로 입력하기
+                        </button>
+                        <button id="analyze-btn" class="primary-btn">
+                            <span class="icon">✨</span> 분석 요청하기
+                        </button>
+                    </div>
+                </section>
+
+                <section class="result-section">
+                    <h2 id="result-title">AI의 답변</h2>
+                    <div id="ai-response-box" class="response-box">
+                        <p id="response-text">여기에 AI의 답변이 표시됩니다.</p>
+                    </div>
+                </section>
+
+                <section class="history-section">
+                    <h2 class="section-title">나의 일기 히스토리</h2>
+                    <div id="history-list" class="history-container">
+                        <!-- 자바스크립트로 로드된 히스토리 카드가 여기에 추가됩니다 -->
+                        <div class="loading-spinner">히스토리를 불러오는 중...</div>
+                    </div>
+                </section>
+            </main>
+        </section>
 
         <footer>
             <p>© 2026 AI Emotion Diary. All rights reserved.</p>

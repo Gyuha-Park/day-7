@@ -1,4 +1,5 @@
 import Redis from 'ioredis';
+import { createClient } from '@supabase/supabase-js';
 
 export default async function handler(request, response) {
     // 1. POST 요청만 허용
@@ -21,6 +22,8 @@ export default async function handler(request, response) {
         // 3. 환경 변수에서 API 키 가져오기
         const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
         const REDIS_URL = process.env.REDIS_URL;
+        const SUPABASE_URL = process.env.SUPABASE_URL;
+        const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
         if (!GEMINI_API_KEY) {
             return response.status(500).json({
@@ -28,9 +31,32 @@ export default async function handler(request, response) {
             });
         }
 
-        // 4. Gemini API 호출
+        // 4. 사용자 인증 (Supabase Token 검증)
+        const authHeader = request.headers.authorization;
+        let userId = null;
+
+        if (authHeader) {
+            const token = authHeader.split(' ')[1]; // Bearer <token>
+
+            if (token && SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
+                const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+                const { data: { user }, error } = await supabase.auth.getUser(token);
+
+                if (!error && user) {
+                    userId = user.id;
+                }
+            }
+        }
+
+        if (!userId) {
+            return response.status(401).json({
+                error: '로그인이 필요한 서비스입니다.'
+            });
+        }
+
+        // 5. Gemini API 호출
         const geminiResponse = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${GEMINI_API_KEY}`,
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${GEMINI_API_KEY}`,
             {
                 method: 'POST',
                 headers: {
@@ -56,10 +82,14 @@ export default async function handler(request, response) {
             throw new Error(data.error.message);
         }
 
-        // 5. AI 답변 추출
-        const aiMessage = data.candidates[0].content.parts[0].text;
+        // AI 모델 응답 구조가 변경될 수 있으므로 안전하게 접근
+        const aiMessage = data.candidates?.[0]?.content?.parts?.[0]?.text;
 
-        // 6. Redis에 저장
+        if (!aiMessage) {
+            throw new Error('AI 응답을 분석할 수 없습니다.');
+        }
+
+        // 6. Redis에 저장 (사용자 ID 포함)
         if (REDIS_URL) {
             try {
                 const client = new Redis(REDIS_URL);
@@ -73,17 +103,21 @@ export default async function handler(request, response) {
                     now.getMinutes().toString().padStart(2, '0') +
                     now.getSeconds().toString().padStart(2, '0');
 
-                const key = `diary-${timestamp}`;
+                // 사용자별 키 생성: user:[userID]:diary-[timestamp]
+                const key = `user:${userId}:diary-${timestamp}`;
 
                 const value = JSON.stringify({
                     content,
                     aiMessage,
-                    createdAt: now.toISOString()
+                    createdAt: now.toISOString(),
+                    userId // 저장 데이터에도 포함 (선택적)
                 });
 
                 await client.set(key, value);
 
-                // Serverless 환경에서는 연결을 명시적으로 끊어주어야 함수가 종료될 수 있음 (상황에 따라 다름)
+                // 만료 시간 설정 (예: 30일) - 선택 사항이지만 Redis 용량 관리를 위해 권장
+                await client.expire(key, 60 * 60 * 24 * 30);
+
                 await client.quit();
             } catch (redisError) {
                 console.error('Redis 저장 중 오류 발생:', redisError);
